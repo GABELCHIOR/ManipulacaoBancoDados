@@ -1,0 +1,130 @@
+---
+title: "Desafio08"
+author: "Gabriel Belchior"
+format: html
+editor: visual
+---
+
+```{r}
+library(RSQLite)
+
+# Conectar
+conn <- dbConnect(SQLite(), "database.sqlite3")
+```
+
+```{r}
+# Consulta para obter a lista de professores de 'STAT'
+query_lista_professores <- "
+SELECT DISTINCT
+  T6.name AS professor_name
+FROM
+  subjects AS T1
+  INNER JOIN subject_memberships AS T2 ON T1.code = T2.subject_code
+  INNER JOIN course_offerings AS T3 ON T2.course_offering_uuid = T3.uuid
+  INNER JOIN sections AS T4 ON T3.uuid = T4.course_offering_uuid
+  INNER JOIN teachings AS T5 ON T4.uuid = T5.section_uuid
+  INNER JOIN instructors AS T6 ON T5.instructor_id = T6.id
+WHERE
+  T1.abbreviation = 'STAT'
+ORDER BY
+  T6.name;
+"
+
+# Execute a consulta e armazene o resultado em um dataframe
+lista_professores_stat <- dbGetQuery(conn, query_lista_professores)
+
+# Exiba a lista de professores
+print(lista_professores_stat)
+
+# Para saber a quantidade, você pode usar a função nrow() no R
+cat("\nTotal de professores de 'STAT':", nrow(lista_professores_stat), "\n")
+```
+
+```{r}
+# Consulta para calcular o GPA de cada oferecimento e associar a professor e disciplina
+query_gpa <- "
+WITH GradePoints AS (
+  SELECT
+    T1.course_offering_uuid,
+    CAST(SUM((4.0 * T1.a_count) + (3.5 * T1.ab_count) + (3.0 * T1.b_count) + (2.5 * T1.bc_count) + (2.0 * T1.c_count) + (1.0 * T1.d_count) + (0.0 * T1.f_count)) AS REAL) AS total_points,
+    CAST(SUM(T1.a_count + T1.ab_count + T1.b_count + T1.bc_count + T1.c_count + T1.d_count + T1.f_count) AS REAL) AS total_students
+  FROM
+    grade_distributions AS T1
+  INNER JOIN
+    course_offerings AS T2 ON T1.course_offering_uuid = T2.uuid
+  INNER JOIN
+    subject_memberships AS T3 ON T2.uuid = T3.course_offering_uuid
+  INNER JOIN
+    subjects AS T4 ON T3.subject_code = T4.code
+  WHERE
+    T4.abbreviation = 'STAT'
+  GROUP BY
+    T1.course_offering_uuid
+)
+SELECT
+    T5.name AS professor_name,
+    T6.name AS course_name,
+    (T1.total_points / T1.total_students) AS gpa
+FROM
+    GradePoints AS T1
+INNER JOIN
+    course_offerings AS T2 ON T1.course_offering_uuid = T2.uuid
+INNER JOIN
+    sections AS T3 ON T2.uuid = T3.course_offering_uuid
+INNER JOIN
+    teachings AS T4 ON T3.uuid = T4.section_uuid
+INNER JOIN
+    instructors AS T5 ON T4.instructor_id = T5.id
+INNER JOIN
+    courses AS T6 ON T2.course_uuid = T6.uuid
+WHERE
+    T1.total_students > 0;
+"
+
+# Execute a consulta e armazene o resultado em um dataframe
+gpa_data <- dbGetQuery(conn, query_gpa)
+```
+
+```{r}
+# Calcule o GPA médio para cada professor usando aggregate()
+professor_gpa <- aggregate(gpa ~ professor_name, data = gpa_data, FUN = mean, na.rm = TRUE)
+
+# Ordene o dataframe pelo GPA médio em ordem crescente
+professor_gpa_ordenado <- professor_gpa[order(professor_gpa$gpa), ]
+
+# Professor mais difícil (o primeiro da lista ordenada)
+professor_mais_dificil <- head(professor_gpa_ordenado, 1)
+
+# Professor mais fácil (o último da lista ordenada)
+professor_mais_facil <- tail(professor_gpa_ordenado, 1)
+
+cat("Professor mais difícil:\n")
+print(professor_mais_dificil)
+cat("\nProfessor mais fácil:\n")
+print(professor_mais_facil)
+```
+
+```{r}
+# Calcule o GPA médio para cada disciplina
+disciplina_gpa <- aggregate(gpa ~ course_name, data = gpa_data, FUN = mean, na.rm = TRUE)
+
+# Ordene o dataframe pelo GPA médio em ordem crescente
+disciplina_gpa_ordenada <- disciplina_gpa[order(disciplina_gpa$gpa), ]
+
+# Disciplina mais difícil (a primeira da lista ordenada)
+disciplina_mais_dificil <- head(disciplina_gpa_ordenada, 1)
+
+# Disciplina mais fácil (a última da lista ordenada)
+disciplina_mais_facil <- tail(disciplina_gpa_ordenada, 1)
+
+cat("\nDisciplina mais difícil:\n")
+print(disciplina_mais_dificil)
+cat("\nDisciplina mais fácil:\n")
+print(disciplina_mais_facil)
+```
+
+```{r}
+dbDisconnect(conn)
+```
+
+Este documento foi gerado em `r format(Sys.time(), '%d de %B de %Y, %H:%M')`.
