@@ -1,0 +1,115 @@
+---
+title: "Desafio02"
+format: html
+editor: visual
+---
+
+```{r}
+# --- Configuração do Python dentro do RStudio (via reticulate) --- 
+library(reticulate)
+# Mostra qual Python o RStudio está usando, versão e pacotes disponíveis 
+py_config()
+```
+
+```{r}
+reticulate::py_install("seaborn")
+#ignore se der alguma mensgaem de erro
+```
+
+```{python}
+# --- Importar bibliotecas ---
+import pandas as pd              # Para manipulação de dados
+import matplotlib.pyplot as plt  # Para criar gráficos
+import calendar                  # Para lidar com calendários
+import numpy as np               # Para manipulação de matrizes e arrays
+
+# ========================
+# 1. Ler os dados
+# ========================
+flights = pd.read_csv("flights.csv", low_memory=False)  
+# Lê o arquivo CSV contendo os voos; low_memory=False evita avisos de tipos de dados
+
+companhia = "AA"  
+# Define a companhia aérea que será analisada (ex: "AA" = American Airlines)
+
+# Filtra os voos da companhia escolhida que tiveram atraso de chegada maior que 10 minutos
+df = flights[(flights["AIRLINE"] == companhia) & (flights["ARRIVAL_DELAY"] > 10)].copy()
+
+# Cria uma coluna "DATE" combinando YEAR, MONTH e DAY em um objeto datetime
+df["DATE"] = pd.to_datetime(df[["YEAR","MONTH","DAY"]])
+
+# Conta quantos atrasos ocorreram em cada data
+atrasos = df.groupby("DATE").size().reset_index(name="count")  
+# Gera um DataFrame com colunas: ["DATE", "count"]
+
+# Cria colunas auxiliares para facilitar filtragem por ano, mês e dia
+atrasos["year"] = atrasos["DATE"].dt.year
+atrasos["month"] = atrasos["DATE"].dt.month
+atrasos["day"] = atrasos["DATE"].dt.day
+
+# ========================
+# 2. Definir o ano a ser analisado
+# ========================
+ano = 2015  
+# Define o ano que será visualizado
+
+# Filtra os dados apenas desse ano
+dados_ano = atrasos[atrasos["year"] == ano]
+
+# ========================
+# 3. Criar figura com 12 subplots (um para cada mês)
+# ========================
+fig, axes = plt.subplots(3, 4, figsize=(20, 15))  
+# Cria uma figura com 12 subplots organizados em 3 linhas e 4 colunas
+axes = axes.flatten()  
+# Flatten transforma a matriz 3x4 em uma lista de 12 elementos para facilitar o loop
+
+# Loop pelos 12 meses do ano
+for mes in range(1, 13):
+    # Filtra os dados apenas para o mês atual
+    dados_mes = dados_ano[dados_ano["month"] == mes]
+    
+    # Cria um calendário do mês atual, começando a semana na segunda-feira
+    cal = calendar.Calendar(firstweekday=0)
+    
+    # Gera a lista de dias do mês; zeros significam dias fora do mês
+    dias = list(cal.itermonthdays(ano, mes))
+    
+    # Cria uma matriz 6x7 para armazenar a contagem de atrasos por dia
+    matriz = np.zeros((6,7))
+    
+    # Preenche a matriz com os dados de atrasos
+    for idx, dia in enumerate(dias):
+        week = idx // 7  # Determina a linha da matriz (semana do mês)
+        day = idx % 7    # Determina a coluna da matriz (dia da semana)
+        if dia != 0:     # Ignora zeros (dias fora do mês)
+            valor = dados_mes.loc[dados_mes["day"] == dia, "count"]
+            matriz[week, day] = valor.values[0] if not valor.empty else 0
+
+    # Seleciona o subplot correspondente ao mês
+    ax = axes[mes-1]
+    
+    # Plota a matriz como uma imagem (heatmap)
+    im = ax.imshow(matriz, cmap="Reds", aspect="auto", vmin=0, vmax=dados_ano["count"].max())
+    
+    # Adiciona o título do mês acima de cada subplot
+    ax.set_title(calendar.month_name[mes], fontsize=14)
+    
+    # Remove rótulos dos eixos X e Y para deixar o gráfico mais limpo
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+# Ajusta o espaçamento entre os subplots sem sobrepor o título do ano
+plt.subplots_adjust(top=0.93, hspace=0.6, wspace=0.4)
+
+# Adiciona o título geral do ano acima de todos os subplots
+fig.suptitle(f"Atrasos >10min da {companhia} em {ano}", fontsize=20, y=0.1)
+
+# Cria uma barra de cores lateral compartilhada para todos os meses
+cbar_ax = fig.add_axes([0.93, 0.15, 0.015, 0.7])
+fig.colorbar(im, cax=cbar_ax, label="Nº atrasos (>10 min)")
+
+# Exibe o gráfico final
+plt.show()
+
+```
