@@ -1,0 +1,68 @@
+---
+title: "Desafio01"
+author: "Gabriel Belchior"
+format: html
+editor: visual
+---
+
+```{r}
+reticulate::py_install("pandas")
+```
+
+```{r}
+# Carregue os pacotes necessários
+library(readr)
+library(reticulate)
+
+# Define os nomes dos arquivos
+zip_file <- "flights.csv.zip"
+csv_file <- "flights.csv"
+
+# Descompacta o arquivo zip se o CSV ainda não existir
+if (!file.exists(csv_file)) {
+  unzip(zip_file)
+  cat("Arquivo CSV descompactado com sucesso!\n")
+} else {
+  cat("O arquivo CSV já existe. Pulando a descompactação.\n")
+}
+```
+
+```{r}
+# 1. R base: read.csv()
+start_base <- Sys.time()
+df_base <- read.csv(csv_file)
+time_base <- Sys.time() - start_base
+rm(df_base)
+
+# 2. R readr: read_csv()
+start_readr <- Sys.time()
+df_readr <- read_csv(csv_file)
+time_readr <- Sys.time() - start_readr
+rm(df_readr)
+
+# 3. Python pandas: read_csv()
+reticulate::py_run_string("
+import pandas as pd
+import time
+csv_file = 'flights.csv'
+start_pandas = time.time()
+df_pandas = pd.read_csv(csv_file)
+time_pandas = time.time() - start_pandas
+")
+
+# Reúne os resultados
+resultados <- data.frame(
+  Metodo = c("read.csv()", "read_csv()", "pandas.read_csv()"),
+  Tempo_Segundos = c(
+    as.numeric(time_base),
+    as.numeric(time_readr),
+    reticulate::py$time_pandas
+  )
+)
+
+# Imprime os resultados ordenados
+resultados_ordenados <- resultados[order(resultados$Tempo_Segundos), ]
+print("Tempo de leitura (em segundos):")
+print(resultados_ordenados)
+```
+
