@@ -1,0 +1,264 @@
+---
+title: "Desafio 07"
+author: "Gabriel Belchior"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r, message=FALSE}
+library(RSQLite)
+library(tidyverse)
+if(!"discoCopy.db" %in% list.files("dados/")){
+file.copy("dados/disco.db"
+,
+"dados/discoCopy.db")
+} # Modificaremos esse arquivo
+```
+#2. Conectar ao banco de dados
+```{r}
+db <- dbConnect(SQLite(),
+"dados/discoCopy.db")
+```
+#3. Criar a tabela instruments no banco de dados
+```{r}
+if ("instruments" %in% dbListTables(db)) {
+  dbExecute(db, "DROP TABLE instruments")
+}
+
+dbExecute(db,
+"CREATE TABLE instruments
+(AlbumId INTEGER,
+TrackId INTEGER,
+ElectricGuitar INTEGER,
+Singer INTEGER,
+Trumpet INTEGER)")
+```
+#4. Listar os campos da tabela instruments
+```{r}
+dbListFields(db,
+'instruments')
+
+```
+#5. Excluir a tabela instruments
+```{r}
+dbExecute(db,
+"DROP TABLE instruments")
+
+```
+#6. Listar as tabelas no banco de dados
+```{r}
+dbListTables(db)
+
+```
+#7. Selecionar o ArtistId de um artista específico e buscar os álbuns desse artista
+```{r}
+aname = "Gilberto Gil"
+sql = paste0("SELECT ArtistId FROM artists "
+,
+"WHERE Name = '"
+, aname,
+"'")
+aId = dbGetQuery(db, sql)
+sql = paste('SELECT Title FROM albums'
+,
+'WHERE ArtistId ='
+, aId)
+dbGetQuery(db, sql)
+
+```
+
+Um usuário malicioso pode inserir algo como
+```{r, eval=FALSE}
+aname <- "Gilberto Gil'; DROP TABLE 'albums"
+
+```
+E destruir seu banco de dados! 
+
+#8. Usando parâmetros para consulta SQL (prevenção contra SQL injection)
+```{r}
+sql = paste("SELECT ArtistId FROM artists"
+,
+"WHERE Name = ?")
+query <- dbSendQuery(db, sql)
+dbBind(query, list("Gilberto Gil"))
+aId <- dbFetch(query)
+dbClearResult(query)
+# Segundo passo interno, não deve causar problema
+sql = paste('SELECT Title FROM albums'
+,
+'WHERE ArtistId ='
+, aId)
+dbGetQuery(db, sql)
+```
+
+#9. Recriar a tabela instruments
+```{r}
+
+if ("instruments" %in% dbListTables(db)) {
+  dbExecute(db, "DROP TABLE instruments")
+}
+
+# Criar a tabela 'instruments' com os campos desejados
+dbExecute(db, "
+  CREATE TABLE instruments (
+    AlbumId INTEGER,
+    TrackId INTEGER,
+    ElectricGuitar TEXT,
+    Singer TEXT,
+    Trumpet TEXT
+  )
+")
+```
+#10. Listar os campos da tabela instruments novamente
+```{r}
+dbListFields(db,
+'instruments')
+
+```
+#11. Consultar os dados da tabela tracks com base no AlbumId
+```{r}
+sql = paste('SELECT TrackId, Name FROM tracks'
+,
+'WHERE AlbumId = 85')
+dbGetQuery(db, sql) %>% head
+
+```
+#12. Inserir dados na tabela instruments
+```{r}
+dbExecute(db,
+"INSERT INTO instruments
+VALUES ('85'
+,
+'1075'
+, 0, 1, 0),
+('85'
+,
+'1078'
+, 0, 1, 0); ")
+```
+#13. Consultar os dados da tabela instruments
+```{r}
+dbGetQuery(db,
+"SELECT * FROM instruments")
+```
+
+#14. Escrever o conjunto de dados mtcars no banco de dados
+```{r}
+if ("mtcars" %in% dbListTables(db)) {
+  dbExecute(db, "DROP TABLE mtcars")
+}
+dbWriteTable(db, "mtcars", mtcars)
+```
+#15. Consultar os primeiros 3 registros da tabela mtcars
+```{r}
+dbGetQuery(db,
+"SELECT * FROM mtcars") %>% head(3)
+```
+#16. Calcular a média das colunas do conjunto mtcars
+```{r}
+theAvgCar <- mtcars %>%
+summarise_all(function(x) round(mean(x), 2))
+theAvgCar
+
+```
+#17. Adicionar as médias calculadas à tabela mtcars no banco de dados
+```{r}
+dbWriteTable(db,
+"mtcars"
+, theAvgCar, append = TRUE)
+dbGetQuery(db,
+"SELECT * FROM mtcars") %>% tail(3)
+
+```
+#18. Substituir a tabela mtcars no banco de dados
+```{r}
+dbWriteTable(db,
+"mtcars"
+, mtcars, overwrite = TRUE)
+dbGetQuery(db,
+"SELECT * FROM mtcars") %>% tail(3)
+```
+#19. Executar uma consulta com paginamento e mostrar o número de linhas retornadas
+```{r}
+res <- dbSendQuery(db,
+"SELECT * FROM mtcars WHERE cyl = 4")
+while(!dbHasCompleted(res)){
+chunk <- dbFetch(res, n = 5)
+print(nrow(chunk))
+}
+
+```
+#20. Limpar o resultado da consulta anterior
+```{r}
+dbClearResult(res)
+
+```
+#21. Desconectar do banco de dados e remover o arquivo temporário
+```{r}
+dbDisconnect(db)
+if("discoCopy.db" %in% list.files("dados/")){
+file.remove("dados/discoCopy.db")
+}
+```
+#22. Carregar dados de aeroportos e companhias aéreas, e escrever no banco
+```{r}
+library(vroom)
+airports <- read_csv("dados/airports.csv"
+, col_types = "cccccdd")
+airlines <- read_csv("dados/airlines.csv"
+, col_types = "cc")
+air <- dbConnect(SQLite(), dbname="dados/air.db")
+
+if ("airports" %in% dbListTables(air)) {
+  dbExecute(air, "DROP TABLE airports")
+}
+if ("airlines" %in% dbListTables(air)) {
+  dbExecute(air, "DROP TABLE airlines")
+}
+
+dbWriteTable(air, name = "airports", airports)
+dbWriteTable(air, name = "airlines", airlines)
+```
+#23. Desconectar do banco de dados air.db e remover o arquivo
+```{r}
+dbDisconnect(air)
+if("air.db" %in% list.files("dados/")){
+file.remove("dados/air.db")
+}
+
+```
+#24. Usar dbplyr para interagir com o banco usando dplyr
+```{r}
+library(RSQLite)
+library(tidyverse)
+library(dbplyr)
+db <- dbConnect(SQLite(),
+"dados/disco.db") # original
+tracks <- tbl(db,
+"tracks") # dplyr
+tracks %>% head(3)
+
+```
+#25. Calcular a média do comprimento e preço das faixas por álbum
+```{r}
+meanTracks <- tracks %>%
+group_by(AlbumId) %>%
+summarise(AvLen = mean(Milliseconds, na.rm = TRUE),
+AvCost = mean(UnitPrice, na.rm = TRUE))
+meanTracks
+
+```
+#26. Ver a consulta gerada pelo dplyr
+```{r}
+meanTracks %>% show_query()
+```
+#27. Coletar os resultados da consulta e exibir
+```{r}
+mT <- meanTracks %>% collect()
+mT
+```
+

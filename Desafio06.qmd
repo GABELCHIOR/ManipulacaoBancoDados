@@ -1,0 +1,165 @@
+---
+title: "Desafio 06"
+author: "Gabriel Belchior"
+format: html
+editor: visual
+---
+
+```{r}
+# Carrega os pacotes necessários para manipulação de dados (dplyr) 
+# e conexão com banco SQLite (RSQLite)
+library(dplyr)
+library(RSQLite)
+```
+
+# Conectar ao banco de dados e salvar como db
+```{r}
+# Conecta ao banco de dados SQLite localizado no arquivo 'disco.db'
+# e armazena a conexão na variável 'db'
+db <- dbConnect(SQLite(), 'disco.db')
+db  # Exibe o objeto de conexão
+
+
+```
+
+# 1. Listar as tabelas do banco
+```{r}
+# Lista todas as tabelas disponíveis no banco de dados
+RSQLite::dbListTables(db)
+```
+
+# 2. Listar colunas da tabela customers
+```{r}
+# Lista os nomes das colunas da tabela 'customers'
+RSQLite::dbListFields(db, "customers")
+```
+
+
+# 3. Número total de clientes
+```{r}
+# Conta quantos registros (clientes) existem na tabela 'customers'
+RSQLite::dbGetQuery(db, "SELECT COUNT(*) AS total_clientes FROM customers")
+```
+
+
+# 4. Número de países distintos
+```{r}
+# Conta quantos países únicos existem na tabela 'customers'
+RSQLite::dbGetQuery(db, "SELECT COUNT(DISTINCT Country) AS total_paises FROM customers")
+
+```
+
+# 5. Quantidade de clientes por país (ordenado)
+```{r}
+# Conta quantos clientes há por país e ordena do maior para o menor
+RSQLite::dbGetQuery(db, "
+  SELECT Country, COUNT(*) AS total_clientes
+  FROM customers
+  GROUP BY Country
+  ORDER BY total_clientes DESC
+")
+```
+# 6. Top 5 países com mais clientes
+```{r}
+# Seleciona os 5 países com o maior número de clientes
+RSQLite::dbGetQuery(db, "
+  SELECT Country, COUNT(*) AS total_clientes
+  FROM customers
+  GROUP BY Country
+  ORDER BY total_clientes DESC
+  LIMIT 5
+")
+```
+# 7. Países com exatamente 6 letras
+```{r}
+# Seleciona países com nomes exatamente com 6 letras
+RSQLite::dbGetQuery(db, "
+  SELECT DISTINCT Country
+  FROM customers
+  WHERE LENGTH(Country) = 6
+")
+```
+# 8. Músicas compradas por clientes brasileiros
+```{r}
+# Retorna os nomes das músicas compradas por clientes cujo país é 'Brazil'
+# A consulta faz junções entre: customers → invoices → invoice_items → tracks
+RSQLite::dbGetQuery(db, "
+  SELECT DISTINCT t.Name AS musica
+  FROM customers c
+  JOIN invoices i ON c.CustomerId = i.CustomerId
+  JOIN invoice_items ii ON i.InvoiceId = ii.InvoiceId
+  JOIN tracks t ON ii.TrackId = t.TrackId
+  WHERE c.Country = 'Brazil'
+")
+```
+
+## Álbum mais tocado por país
+```{r}
+# Para cada país, seleciona o álbum mais tocado (mais vezes comprado)
+# Usa ROW_NUMBER() para garantir apenas um álbum por país
+dbGetQuery(db, "
+  SELECT
+    Country,
+    Album,
+    Total_Tocadas
+  FROM (
+    SELECT
+      c.Country,
+      al.Title AS Album,
+      COUNT(*) AS Total_Tocadas,
+      ROW_NUMBER() OVER (PARTITION BY c.Country ORDER BY COUNT(*) DESC) AS rn
+    FROM customers c
+    JOIN invoices i ON c.CustomerId = i.CustomerId
+    JOIN invoice_items ii ON i.InvoiceId = ii.InvoiceId
+    JOIN tracks t ON ii.TrackId = t.TrackId
+    JOIN albums al ON t.AlbumId = al.AlbumId
+    GROUP BY c.Country, al.Title
+  )
+  WHERE rn = 1
+  ORDER BY Country;
+")
+```
+
+## Artista mais tocado por pais
+
+```{r}
+# Para cada país, seleciona o(s) artista(s) mais tocado(s) (mais vezes comprado(s))
+# Usa subconsulta com MAX() para garantir que apenas os maiores valores sejam retornados
+# Pode retornar mais de um artista por país em caso de empate
+dbGetQuery(db, "
+  SELECT
+      c.Country,
+      ar.Name AS Artista,
+      COUNT(*) AS Total_Tocadas
+  FROM customers c
+  JOIN invoices i ON c.CustomerId = i.CustomerId
+  JOIN invoice_items ii ON i.InvoiceId = ii.InvoiceId
+  JOIN tracks t ON ii.TrackId = t.TrackId
+  JOIN albums al ON t.AlbumId = al.AlbumId
+  JOIN artists ar ON al.ArtistId = ar.ArtistId
+  GROUP BY c.Country, ar.Name
+  HAVING Total_Tocadas = (
+      SELECT MAX(Sub.Total)
+      FROM (
+          SELECT COUNT(*) AS Total
+          FROM customers c2
+          JOIN invoices i2 ON c2.CustomerId = i2.CustomerId
+          JOIN invoice_items ii2 ON i2.InvoiceId = ii2.InvoiceId
+          JOIN tracks t2 ON ii2.TrackId = t2.TrackId
+          JOIN albums al2 ON t2.AlbumId = al2.AlbumId
+          JOIN artists ar2 ON al2.ArtistId = ar2.ArtistId
+          WHERE c2.Country = c.Country
+          GROUP BY ar2.Name
+      ) AS Sub
+  )
+  ORDER BY c.Country;
+")
+```
+
+
+
+# 9. Desconectar do banco
+```{r}
+RSQLite::dbDisconnect(db)
+```
+
