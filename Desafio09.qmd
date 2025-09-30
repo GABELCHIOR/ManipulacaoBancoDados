@@ -1,0 +1,146 @@
+---
+title: "Desafio09"
+author: "Gabriel Belchior"
+format: html
+editor: visual
+---
+
+```{r}
+options(readr.show_col_types = FALSE)
+```
+
+
+```{r}
+library(readr)
+library(RSQLite)
+
+```
+
+```{r}
+
+# Cria ou abre o banco SQLite chamado "voos.sqlite3"
+# Se não existir, ele será criado na pasta atual
+conn <- dbConnect(SQLite(), "voos.sqlite3")
+```
+
+
+#1. Criar as tabelas airlines e airports
+```{r}
+# Lê o arquivo airlines.csv (companhias aéreas)
+airlines <- read_csv("airlines.csv")
+
+# Grava no banco, criando a tabela "airlines"
+# overwrite = TRUE sobrescreve se a tabela já existir
+dbWriteTable(conn, "airlines", airlines, overwrite = TRUE)
+
+# Lê o arquivo airports.csv (aeroportos)
+airports <- read_csv("airports.csv")
+
+# Grava no banco, criando a tabela "airports"
+dbWriteTable(conn, "airports", airports, overwrite = TRUE)
+```
+
+#2. Criar a função de leitura em chunks (lerDados)
+```{r}
+# Função chamada a cada bloco (chunk) lido do flights.csv
+lerDados <- function(input, pos) {
+  # Mostra no console em que linha a leitura chegou
+  message("Leitura atingiu a linha ", pos)
+  
+  # Lista de aeroportos de interesse
+  aeroportos_interesse <- c("BWI", "MIA", "SEA", "SFO", "JFK")
+  
+  # Filtra somente voos cuja origem ou destino
+  # seja um dos aeroportos de interesse
+  input_filtrado <- subset(
+    input,
+    ORIGIN_AIRPORT %in% aeroportos_interesse |
+      DESTINATION_AIRPORT %in% aeroportos_interesse
+  )
+  
+  # Só grava no banco se houver linhas no chunk filtrado
+  if (nrow(input_filtrado) > 0) {
+    if (!"flights" %in% dbListTables(conn)) {
+      # Se a tabela ainda não existe → cria a tabela
+      dbWriteTable(conn, "flights", input_filtrado, overwrite = TRUE)
+    } else {
+      # Se já existe → adiciona novas linhas no final
+      dbWriteTable(conn, "flights", input_filtrado, append = TRUE)
+    }
+  }
+}
+```
+#3. Ler flights.csv em chunks de 100.000 linhas
+```{r}
+# Se já existir tabela "flights", remove para evitar dados duplicados
+if ("flights" %in% dbListTables(conn)) {
+  dbRemoveTable(conn, "flights")
+}
+
+# Define as colunas que vamos ler do flights.csv
+# (isso economiza memória e evita carregar colunas inúteis)
+colunas <- cols_only(
+  YEAR = col_integer(),
+  MONTH = col_integer(),
+  DAY = col_integer(),
+  AIRLINE = col_character(),
+  FLIGHT_NUMBER = col_integer(),
+  ORIGIN_AIRPORT = col_character(),
+  DESTINATION_AIRPORT = col_character(),
+  ARRIVAL_DELAY = col_double()
+)
+
+# Cria um callback que chama a função lerDados a cada chunk lido
+callback <- SideEffectChunkCallback$new(lerDados)
+
+# Faz a leitura do flights.csv em blocos de 100.000 linhas
+# Para cada bloco, a função lerDados é chamada
+read_csv_chunked(
+  "flights.csv",
+  callback = callback,
+  chunk_size = 100000,
+  col_types = colunas
+)
+```
+
+#4. Consulta SQL: atraso médio por aeroporto de destino e companhia
+```{r}
+# Consulta SQL que calcula:
+# - sigla do aeroporto de destino
+# - nome completo do aeroporto
+# - nome completo da companhia aérea
+# - atraso médio de chegada
+# Junta (JOIN) as tabelas flights, airports e airlines
+# Agrupa por aeroporto e companhia
+# Ordena pelo atraso médio (do maior para o menor)
+query <- "
+SELECT 
+    f.DESTINATION_AIRPORT AS sigla_aeroporto,
+    a.AIRPORT AS nome_aeroporto,
+    al.AIRLINE AS nome_companhia,
+    AVG(f.ARRIVAL_DELAY) AS atraso_medio
+FROM flights f
+JOIN airports a ON f.DESTINATION_AIRPORT = a.IATA_CODE
+JOIN airlines al ON f.AIRLINE = al.IATA_CODE
+GROUP BY f.DESTINATION_AIRPORT, al.AIRLINE
+ORDER BY atraso_medio DESC;
+"
+
+# Executa a consulta no banco SQLite
+resultado <- dbGetQuery(conn, query)
+
+# Mostra as 20 piores médias de atraso
+head(resultado, 20)
+```
+
+#5. Encerrar a conexão com o banco
+```{r}
+# Fecha a conexão com o banco (boa prática)
+dbDisconnect(conn)
+```
+
+```{r}
+
+cat("\n---\n\n*HTML renderizado em:*", format(Sys.time(), "%d/%m/%Y %H:%M:%S"), "\n")
+```
+
