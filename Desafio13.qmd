@@ -1,0 +1,102 @@
+---
+title: "Desafio13"
+author: "Gabriel Belchior"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+# Definir opções de chunk globais para todos os chunks R
+knitr::opts_chunk$set(
+  error = FALSE,   # Oculta mensagens de erro
+  warning = FALSE, # Oculta mensagens de aviso (warnings)
+  message = FALSE  # Oculta mensagens normais (messages)
+)
+```
+
+
+```{r}
+library(DBI)
+library(RSQLite)
+library(readr)
+library(dplyr)
+```
+# 1. Definindo caminhos e criando conexão SQLite
+
+```{r}
+path_basics <- "title.basics0.tsv"      # Caminho para o arquivo de informações básicas
+path_ratings <- "title.ratings.tsv"     # Caminho para o arquivo de avaliações
+path_principals <- "title.principals0.tsv" # Caminho para o arquivo de elenco e equipe
+
+# Criando conexão com o banco SQLite
+con <- dbConnect(RSQLite::SQLite(), "movies.sqlite3")
+
+```
+
+# 2. Lendo arquivos TSV e gravando no banco
+```{r}
+# Lendo os arquivos TSV, tratando '\N' como NA
+basics <- read_tsv(path_basics, na = "\\\\N")
+ratings <- read_tsv(path_ratings, na = "\\\\N")
+principals <- read_tsv(path_principals, na = "\\\\N")
+
+# Gravando os dados no SQLite (sobrescrevendo se já existirem)
+dbWriteTable(con, "basics", basics, overwrite = TRUE)
+dbWriteTable(con, "ratings", ratings, overwrite = TRUE)
+dbWriteTable(con, "principals", principals, overwrite = TRUE)
+```
+# 3a. 5 filmes com maiores notas (desempate pelo número de votos)
+```{sql connection=con}
+--Seleciona título, nota média e número de votos
+--Ordena pela nota média decrescente e desempata pelo número de votos
+--Limita aos 5 primeiros
+SELECT b.primaryTitle, r.averageRating, r.numVotes
+FROM basics b
+JOIN ratings r ON b.tconst = r.tconst
+WHERE b.titleType = 'movie'
+ORDER BY r.averageRating DESC, r.numVotes DESC
+LIMIT 5;
+```
+
+
+# 3b. Gênero mais frequente entre filmes com nota maior que 8
+
+```{sql connection=con}
+--Conta frequência de cada gênero em filmes com nota > 8
+--Ordena pela frequência decrescente e retorna o mais frequente
+SELECT b.genres, COUNT(*) AS freq
+FROM basics b
+JOIN ratings r ON b.tconst = r.tconst
+WHERE r.averageRating > 8 AND b.titleType = 'movie'
+GROUP BY b.genres
+ORDER BY freq DESC
+LIMIT 1;
+```
+# 3c. 3 atores/atrizes que mais participaram de filmes com nota > 7.5
+```{sql connection=con}
+
+--Conta número de filmes com nota > 7.5 por ator/atriz
+--Filtra apenas 'actor' e 'actress'
+--Ordena e retorna os 3 primeiros
+SELECT p.nconst, COUNT(*) AS num_filmes
+FROM principals p
+JOIN ratings r ON p.tconst = r.tconst
+JOIN basics b ON b.tconst = p.tconst
+WHERE r.averageRating > 7.5
+  AND p.category IN ('actor', 'actress')
+  AND b.titleType = 'movie'
+GROUP BY p.nconst
+ORDER BY num_filmes DESC
+LIMIT 3;
+```
+4. Encerrando a conexão com o banco
+```{r}
+dbDisconnect(con) # Fecha a conexão com o SQLite
+```
+
+```{r}
+cat("HTML renderizado em:", 
+    format(Sys.time(), "%d/%m/%Y %H:%M:%S", tz = "America/Sao_Paulo"))
+```
+
+
